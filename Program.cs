@@ -16,7 +16,7 @@ internal class Program
 
         IConfiguration configuration = configBuilder.Build();
 
-        string logFolder = configuration["ExtractConfig:LogFolder"];
+        string logFolder = configuration["ExtractConfig:LogFolder"] ?? @"E:\Prodige\LOGS";
         if (string.IsNullOrWhiteSpace(logFolder))
             logFolder = Path.Combine(AppContext.BaseDirectory, "Logs");
 
@@ -37,6 +37,8 @@ internal class Program
             var host = Host.CreateDefaultBuilder(args)
                 .ConfigureServices((hostContext, services) =>
                 {
+                    // Injection des configurations
+                    services.Configure<SftpSettings>(configuration.GetSection("ExtractConfig:SftpSettings"));
                     services.Configure<ExtractConfig>(configuration.GetSection("ExtractConfig"));
                     services.AddSingleton<FtpHelper>();
                     services.AddSingleton<FileProcessor>();

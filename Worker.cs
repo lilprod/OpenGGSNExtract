@@ -11,13 +11,13 @@ public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly FileProcessor _processor;
-    private FileSystemWatcher _watcher;
+    private FileSystemWatcher? _watcher;
 
     private readonly ConcurrentQueue<string> _fileQueue = new();
     private readonly SemaphoreSlim _queueSemaphore = new(0);
 
-    // Utilisation d'un dictionnaire pour un verrouillage per fichier
-    private readonly ConcurrentDictionary<string, object> _fileLocks = new();
+    // Utilisation d'un dictionnaire pour un verrouillage per fichier
+    private readonly ConcurrentDictionary<string, object> _fileLocks = new();
 
     public Worker(ILogger<Worker> logger, FileProcessor processor)
     {
@@ -29,14 +29,14 @@ public class Worker : BackgroundService
     {
         _logger.LogInformation("=== Service GGSN Extract - Démarrage ===");
 
-        // Démarre le watcher
-        StartWatcher();
+        // Démarre le watcher
+        StartWatcher();
 
-        // Traite les fichiers existants lors du démarrage
-        await ProcessInitialFilesAsync(stoppingToken);
+        // Traite les fichiers existants lors du démarrage
+        await ProcessInitialFilesAsync(stoppingToken);
 
-        // Traite les nouveaux fichiers détectés
-        await ProcessWatcherQueueAsync(stoppingToken);
+        // Traite les nouveaux fichiers détectés
+        await ProcessWatcherQueueAsync(stoppingToken);
     }
 
     private async Task ProcessInitialFilesAsync(CancellationToken stoppingToken)
@@ -74,31 +74,31 @@ public class Worker : BackgroundService
             return;
         }
 
-        // Crée et configure le watcher
-        _watcher = new FileSystemWatcher(sourceDir, "*.gz")
+        // Crée et configure le watcher
+        _watcher = new FileSystemWatcher(sourceDir, "*.gz")
         {
             EnableRaisingEvents = true,
             IncludeSubdirectories = false,
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime | NotifyFilters.Size,
             InternalBufferSize = 64 * 1024 // Augmenter la taille du tampon à 64 Ko
-        };
+        };
 
-        // Gestion de l'événement Created
-        _watcher.Created += (s, e) =>
+        // Gestion de l'événement Created
+        _watcher.Created += (s, e) =>
         {
             try
             {
                 var fileInfo = new FileInfo(e.FullPath);
 
-                // Si le fichier fait 0 Ko, on l'ignore
-                if (fileInfo.Length == 0)
+                // Si le fichier fait 0 Ko, on l'ignore
+                if (fileInfo.Length == 0)
                 {
                     _logger.LogInformation($"Fichier créé avec taille 0 Ko, ignoré pour le moment : {Path.GetFileName(e.FullPath)}");
                     return;
                 }
 
-                // Vérifie si le fichier est déjà en cours de traitement via un verrouillage
-                if (_fileLocks.TryAdd(e.FullPath, new object()))
+                // Vérifie si le fichier est déjà en cours de traitement via un verrouillage
+                if (_fileLocks.TryAdd(e.FullPath, new object()))
                 {
                     _logger.LogInformation($"Fichier créé et prêt à être traité : {Path.GetFileName(e.FullPath)}");
                     _fileQueue.Enqueue(e.FullPath);
@@ -115,18 +115,18 @@ public class Worker : BackgroundService
             }
         };
 
-        // Gestion de l'événement Changed
-        _watcher.Changed += (s, e) =>
+        // Gestion de l'événement Changed
+        _watcher.Changed += (s, e) =>
         {
             try
             {
                 var fileInfo = new FileInfo(e.FullPath);
 
-                // Si la taille du fichier est > 0 Ko et qu'il n'est pas déjà en traitement
-                if (fileInfo.Length > 0 && !_fileLocks.ContainsKey(e.FullPath))
+                // Si la taille du fichier est > 0 Ko et qu'il n'est pas déjà en traitement
+                if (fileInfo.Length > 0 && !_fileLocks.ContainsKey(e.FullPath))
                 {
-                    // Vérifie si le fichier est déjà en cours de traitement via un verrouillage
-                    if (_fileLocks.TryAdd(e.FullPath, new object()))
+                    // Vérifie si le fichier est déjà en cours de traitement via un verrouillage
+                    if (_fileLocks.TryAdd(e.FullPath, new object()))
                     {
                         _logger.LogInformation($"Fichier modifié et prêt à être traité : {Path.GetFileName(e.FullPath)}");
                         _fileQueue.Enqueue(e.FullPath);
@@ -148,8 +148,8 @@ public class Worker : BackgroundService
             }
         };
 
-        // Gérer les erreurs de FileSystemWatcher
-        _watcher.Error += (s, e) =>
+        // Gérer les erreurs de FileSystemWatcher
+        _watcher.Error += (s, e) =>
         {
             _logger.LogError($"Erreur dans le FileSystemWatcher : {e.GetException().Message}");
             RestartWatcher();
@@ -173,7 +173,7 @@ public class Worker : BackgroundService
                     try
                     {
                         for (int i = 0; i < 10; i++) // Réessaye jusqu'à 10 fois si le fichier est en cours d'utilisation
-                        {
+                        {
                             try
                             {
                                 using (File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.Read)) { }
@@ -182,13 +182,13 @@ public class Worker : BackgroundService
                             catch
                             {
                                 await Task.Delay(200); // Attends 200 ms avant de réessayer
-                            }
+                            }
                         }
 
                         await _processor.ProcessFileIfEligibleAsync(filePath);
 
-                        // Libère le verrou après traitement
-                        _fileLocks.TryRemove(filePath, out _);
+                        // Libère le verrou après traitement
+                        _fileLocks.TryRemove(filePath, out _);
                     }
                     catch (Exception ex)
                     {
@@ -205,17 +205,17 @@ public class Worker : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        // Dispose le watcher et log l'arrêt du service
-        _watcher?.Dispose();
+        // Dispose le watcher et log l'arrêt du service
+        _watcher?.Dispose();
         _logger.LogInformation("Service GGSN Extract arrêté.");
         await base.StopAsync(cancellationToken);
     }
 
     private void RestartWatcher()
     {
-        // Redémarre le FileSystemWatcher en cas d'erreur ou de problème
-        _logger.LogWarning("Redémarrage du FileSystemWatcher...");
+        // Redémarre le FileSystemWatcher en cas d'erreur ou de problème
+        _logger.LogWarning("Redémarrage du FileSystemWatcher...");
         _watcher?.Dispose();
         StartWatcher(); // Redémarre le watcher
-    }
+    }
 }

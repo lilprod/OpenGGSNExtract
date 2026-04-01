@@ -28,16 +28,34 @@ namespace GgsnExtractService.Logging
 
         public FileLogger(string file) => _file = file;
 
-        public IDisposable BeginScope<TState>(TState state) => null;
+        // SOLUTION CS8633 : Implémentation explicite de l'interface
+        // Cela permet de matcher les contraintes de TState sans conflit de nullabilité
+        IDisposable ILogger.BeginScope<TState>(TState state) => NullScope.Instance;
+
         public bool IsEnabled(LogLevel logLevel) => true;
 
+        // SOLUTION CS8604 : Ajout de '?' sur Exception et le formatter 
+        // car un log n'a pas systématiquement d'exception associée.
         public void Log<TState>(LogLevel logLevel, EventId eventId,
-                                TState state, Exception exception, Func<TState, Exception, string> formatter)
+                                TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
-            string msg = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{logLevel}] {formatter(state, exception)}";
-            if (exception != null) msg += "\n" + exception;
+            if (!IsEnabled(logLevel)) return;
 
-            File.AppendAllText(_file, msg + Environment.NewLine);
+            string message = formatter(state, exception);
+            string logEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{logLevel}] {message}";
+
+            if (exception != null)
+                logEntry += Environment.NewLine + exception;
+
+            // Utilisation d'un verrouillage simple ou lock si plusieurs threads écrivent
+            File.AppendAllText(_file, logEntry + Environment.NewLine);
+        }
+
+        // Classe interne pour gérer les scopes vides proprement
+        private class NullScope : IDisposable
+        {
+            public static NullScope Instance { get; } = new NullScope();
+            public void Dispose() { }
         }
     }
 }
